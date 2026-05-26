@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoSense India</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#catalog" aria-label="AutoSense India home">
+        <span class="brand-mark">A</span>
+        <span>AutoSense India</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#catalog">Catalog</a>
+        <a href="#compare">Compare</a>
+        <a href="#assistant">AI Assistant</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <img
+          src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=80"
+          alt="A car driving on a mountain road"
+        />
+        <div class="hero-content">
+          <p class="eyebrow">Indian market vehicle intelligence</p>
+          <h1>Find the right car with clean data and an assistant that can reason with it.</h1>
+          <p>
+            Browse popular vehicles available in India, filter by real buying needs, compare
+            shortlists, and ask the assistant for trade-offs in plain English.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#assistant">Start questionnaire</a>
+            <a class="button secondary" href="#catalog">Explore vehicles</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="market-strip" aria-label="Market snapshot">
+        <div>
+          <strong id="vehicleCount">0</strong>
+          <span>seed vehicles</span>
+        </div>
+        <div>
+          <strong>Petrol, diesel, CNG, hybrid, EV</strong>
+          <span>powertrains covered</span>
+        </div>
+        <div>
+          <strong>Responses API ready</strong>
+          <span>uses OpenAI when configured</span>
+        </div>
+      </section>
+
+      <section id="catalog" class="section catalog-layout">
+        <aside class="filters" aria-label="Vehicle filters">
+          <div class="section-heading compact">
+            <p class="eyebrow">Search</p>
+            <h2>Catalog filters</h2>
+          </div>
+          <label>
+            Query
+            <input id="searchInput" type="search" placeholder="Creta, EV, 7 seats..." />
+          </label>
+          <label>
+            Budget up to
+            <output id="budgetOutput">₹25 lakh</output>
+            <input id="budgetRange" type="range" min="4" max="55" value="25" />
+          </label>
+          <label>
+            Body type
+            <select id="bodyFilter">
+              <option value="all">All body types</option>
+            </select>
+          </label>
+          <label>
+            Fuel
+            <select id="fuelFilter">
+              <option value="all">All fuels</option>
+            </select>
+          </label>
+          <label>
+            Seats
+            <select id="seatFilter">
+              <option value="all">Any seating</option>
+              <option value="5">5 seats</option>
+              <option value="7">7 seats</option>
+            </select>
+          </label>
+          <button id="resetFilters" class="button ghost" type="button">Reset</button>
+        </aside>
+
+        <div class="catalog-main">
+          <div class="section-heading">
+            <p class="eyebrow">Available now</p>
+            <h2>Vehicles for Indian buyers</h2>
+            <p>
+              Prices are indicative ex-showroom ranges. Use the cards to compare, then let the
+              assistant reason through ownership trade-offs.
+            </p>
+          </div>
+          <div id="vehicleGrid" class="vehicle-grid" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section id="compare" class="section compare-section">
+        <div class="section-heading">
+          <p class="eyebrow">Shortlist</p>
+          <h2>Comparison table</h2>
+          <p>Select up to three vehicles from the catalog.</p>
+        </div>
+        <div class="table-wrap">
+          <table id="compareTable">
+            <thead>
+              <tr>
+                <th>Vehicle</th>
+                <th>Price</th>
+                <th>Fuel</th>
+                <th>Seats</th>
+                <th>Best for</th>
+                <th>Watch-outs</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="assistant" class="section assistant-layout">
+        <div class="questionnaire">
+          <div class="section-heading compact">
+            <p class="eyebrow">Questionnaire</p>
+            <h2>Tell the assistant what matters</h2>
+          </div>
+          <label>
+            Max budget
+            <select id="qBudget">
+              <option value="8">Under ₹8 lakh</option>
+              <option value="12">Under ₹12 lakh</option>
+              <option value="18" selected>Under ₹18 lakh</option>
+              <option value="30">Under ₹30 lakh</option>
+              <option value="55">Flexible / premium</option>
+            </select>
+          </label>
+          <label>
+            Main use
+            <select id="qUse">
+              <option>City commute</option>
+              <option>Family highway trips</option>
+              <option>Seven-seat family use</option>
+              <option>Low running cost</option>
+              <option>Driving enjoyment</option>
+              <option>Electric vehicle ownership</option>
+            </select>
+          </label>
+          <label>
+            Fuel preference
+            <select id="qFuel">
+              <option>Any</option>
+              <option>Petrol</option>
+              <option>Diesel</option>
+              <option>CNG</option>
+              <option>Hybrid</option>
+              <option>Electric</option>
+            </select>
+          </label>
+          <label>
+            Must-have
+            <select id="qPriority">
+              <option>Safety</option>
+              <option>Low running cost</option>
+              <option>Features</option>
+              <option>Space</option>
+              <option>Resale value</option>
+              <option>Performance</option>
+            </select>
+          </label>
+          <button id="recommendButton" class="button primary" type="button">Get recommendation</button>
+        </div>
+
+        <div class="chat-panel">
+          <div class="chat-header">
+            <div>
+              <p class="eyebrow">AI Assistant</p>
+              <h2>Ask anything about your shortlist</h2>
+            </div>
+            <span id="aiStatus">Local mode</span>
+          </div>
+          <div id="chatLog" class="chat-log" aria-live="polite"></div>
+          <form id="chatForm" class="chat-form">
+            <textarea
+              id="chatInput"
+              rows="3"
+              placeholder="Example: Compare Creta, Seltos and Grand Vitara for a family in Pune with ₹18 lakh budget."
+              required
+            ></textarea>
+            <button class="button primary" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="section sources">
+        <div class="section-heading compact">
+          <p class="eyebrow">Data notes</p>
+          <h2>Source trail</h2>
+        </div>
+        <p>
+          Initial market coverage and price anchors were cross-checked against public 2026 Indian
+          car listings, including CarDekho’s new-car market page. Treat all prices as indicative;
+          on-road price, availability, variants, waiting period, and offers vary by city and date.
+        </p>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
