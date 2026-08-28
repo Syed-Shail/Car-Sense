@@ -6,9 +6,9 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 
 
-DATA_FILE = "data/processed/enhanced_vehicles.json"
-INDEX_FILE = "data/processed/car_index.faiss"
-MODEL_FILE = "data/processed/ranker.pkl"
+DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
+INDEX_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/car_index.faiss"
+MODEL_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/ranker.pkl"
 
 
 print("Loading model...")
@@ -39,23 +39,62 @@ def semantic_candidates(query, top_k=50):
     return [cars[i] for i in indices[0]]
 
 
-def apply_filters(candidates, budget, seats, body_type):
+def apply_filters(
+    candidates,
+    budget=None,
+    seats=None,
+    body_type=None,
+    max_price=None,
+    min_price=None
+):
     filtered = []
 
     for car in candidates:
-        min_price = min(
+
+        min_car_price = min(
             variant["pricing"]["ex_showroom"]
             for variant in car["variants"]
         )
 
-        if min_price > budget:
-            continue
+        # -----------------------------
+        # Normal budget filter
+        # -----------------------------
 
-        if car["seating_capacity"] < seats:
-            continue
+        if budget is not None:
+            if min_car_price > budget:
+                continue
 
-        if car["body_type"].lower() != body_type.lower():
-            continue
+        # -----------------------------
+        # Comparison: cheaper than X
+        # -----------------------------
+
+        if max_price is not None:
+            if min_car_price >= max_price:
+                continue
+
+        # -----------------------------
+        # Comparison: more expensive than X
+        # -----------------------------
+
+        if min_price is not None:
+            if min_car_price <= min_price:
+                continue
+
+        # -----------------------------
+        # Seats
+        # -----------------------------
+
+        if seats is not None:
+            if car["seating_capacity"] < seats:
+                continue
+
+        # -----------------------------
+        # Body type
+        # -----------------------------
+
+        if body_type is not None:
+            if car["body_type"].lower() != body_type.lower():
+                continue
 
         filtered.append(car)
 
@@ -103,17 +142,27 @@ def ml_rerank(filtered_cars, budget, seats, priority):
     return ranked[:5]
 
 
-def hybrid_recommend(query, budget, seats, body_type, priority):
+def hybrid_recommend(
+    query,
+    budget=None,
+    seats=None,
+    body_type=None,
+    priority=None,
+    max_price=None,
+    min_price=None
+):
     print("Semantic retrieval...")
     candidates = semantic_candidates(query)
 
     print("Applying filters...")
     filtered = apply_filters(
-        candidates,
-        budget,
-        seats,
-        body_type
-    )
+    candidates,
+    budget=budget,
+    seats=seats,
+    body_type=body_type,
+    max_price=max_price,
+    min_price=min_price
+)
 
     print("ML reranking...")
     ranked = ml_rerank(

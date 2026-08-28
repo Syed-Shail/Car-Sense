@@ -14,13 +14,16 @@ def recommend():
 
     parsed = parse_query(query, cars)
     parsed = resolve_reference(parsed)
+    print("AFTER RESOLVER:", parsed)
 
     results = hybrid_recommend(
         query=query,
         budget=parsed.get("budget") or 5000000,
         seats=parsed.get("seats") or 5,
         body_type=parsed.get("body_type") or "SUV",
-        priority=(parsed.get("intent") or ["family"])[0]
+        priority=(parsed.get("intent") or ["family"])[0],
+        max_price=parsed.get("max_price"),
+        min_price=parsed.get("min_price")   
     )
 
     return jsonify({
