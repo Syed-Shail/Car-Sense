@@ -1,11 +1,7 @@
-import json
+from .catalog_store import load_catalog
 
 
-DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
-
-
-with open(DATA_FILE, "r", encoding="utf-8") as file:
-    cars = json.load(file)
+cars = load_catalog()
 
 
 def find_reference_car(reference_model):
@@ -19,10 +15,22 @@ def find_reference_car(reference_model):
 
         model = car.get("model", "").lower()
 
-        if reference_model in model:
+        if reference_model == model:
             return car
 
     return None
+
+
+def _starting_price(reference_car):
+    prices = [
+        variant.get("pricing", {}).get("ex_showroom")
+        for variant in reference_car.get("variants", [])
+        if isinstance(variant, dict)
+        and isinstance(variant.get("pricing"), dict)
+        and isinstance(variant["pricing"].get("ex_showroom"), (int, float))
+        and variant["pricing"]["ex_showroom"] > 0
+    ]
+    return min(prices) if prices else None
 
 
 def resolve_reference(parsed):
@@ -44,13 +52,21 @@ def resolve_reference(parsed):
     if parsed.get("body_type") is None:
         parsed["body_type"] = reference_car.get("body_type")
 
-    if parsed.get("fuel_type") is None:
-        parsed["fuel_type"] = reference_car.get("fuel_type")
-
-    if parsed.get("seats") is None:
-        parsed["seats"] = reference_car.get(
-            "seating_capacity"
-        )
+    # Resolve every explicit price comparison independently. For several upper
+    # bounds keep the lowest; for lower bounds keep the highest.
+    for price_comparison in parsed.get("price_comparisons", []):
+        if not isinstance(price_comparison, dict) or price_comparison.get("type") != "price":
+            continue
+        compared_car = find_reference_car(price_comparison.get("reference_model"))
+        reference_price = _starting_price(compared_car) if compared_car else None
+        if reference_price is None:
+            continue
+        if price_comparison.get("operator") == "less_than":
+            current = parsed.get("max_price")
+            parsed["max_price"] = min(current, reference_price) if current is not None else reference_price
+        elif price_comparison.get("operator") == "greater_than":
+            current = parsed.get("min_price")
+            parsed["min_price"] = max(current, reference_price) if current is not None else reference_price
 
     # --------------------------------
     # Comparison
@@ -68,18 +84,17 @@ def resolve_reference(parsed):
     # Price comparison
     # --------------------------------
 
-    reference_price = min(
-    variant["pricing"]["ex_showroom"]
-    for variant in reference_car["variants"]
-    )
+    reference_price = _starting_price(reference_car)
 
-    if comparison_type == "price" and reference_price:
+    if comparison_type == "price" and reference_price is not None:
 
         if operator == "less_than":
-            parsed["max_price"] = reference_price
+            current = parsed.get("max_price")
+            parsed["max_price"] = min(current, reference_price) if current is not None else reference_price
 
         elif operator == "greater_than":
-            parsed["min_price"] = reference_price
+            current = parsed.get("min_price")
+            parsed["min_price"] = max(current, reference_price) if current is not None else reference_price
 
     # --------------------------------
     # Other comparisons

@@ -1,10 +1,12 @@
 import json
+from pathlib import Path
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
-INDEX_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/car_index.faiss"
+ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = ROOT / "data/processed/enhanced_vehicles.json"
+INDEX_FILE = ROOT / "data/processed/car_index.faiss"
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -12,7 +14,7 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 with open(DATA_FILE, "r") as file:
     cars = json.load(file)
 
-index = faiss.read_index(INDEX_FILE)
+index = faiss.read_index(str(INDEX_FILE))
 
 
 def semantic_search(query, top_k=5):

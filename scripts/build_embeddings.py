@@ -1,10 +1,12 @@
 import json
+from pathlib import Path
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-INPUT_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
-INDEX_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/car_index.faiss"
+ROOT = Path(__file__).resolve().parents[1]
+INPUT_FILE = ROOT / "data/processed/enhanced_vehicles.json"
+INDEX_FILE = ROOT / "data/processed/car_index.faiss"
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 

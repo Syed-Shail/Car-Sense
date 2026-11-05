@@ -1,7 +1,8 @@
 import json
+from pathlib import Path
 
 
-DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
+DATA_FILE = Path(__file__).resolve().parents[2] / "data/processed/enhanced_vehicles.json"
 
 
 def load_cars():

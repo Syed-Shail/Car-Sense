@@ -1,5 +1,6 @@
 import pandas as pd
 import joblib
+from pathlib import Path
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -7,8 +8,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
 
 
-DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/training_data.csv"
-MODEL_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/ranker.pkl"
+ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = ROOT / "data/processed/training_data.csv"
+MODEL_FILE = ROOT / "data/processed/ranker.pkl"
 
 
 df = pd.read_csv(DATA_FILE)

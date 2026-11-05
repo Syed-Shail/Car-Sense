@@ -109,17 +109,35 @@ DRIVE_TYPES = {
 
 INTENTS = {
     "performance": [
+        "sports car",
+        "sports cars",
+        "sportscar",
+        "sportscars",
+        "supercar",
+        "supercars",
+        "roadster",
+        "track car",
+        "track day",
+        "track-ready",
+        "spirited driving",
+        "sharp handling",
+        "fast acceleration",
+        "thrilling",
+        "weekend drive",
         "sporty",
         "fast",
         "powerful",
         "performance",
-        "quick"
+        "quick",
+        "exciting to drive",
+        "high-performance",
     ],
 
     "family": [
         "family",
         "family car",
-        "family vehicle"
+        "family vehicle",
+        "family trips", "school run", "kid-friendly", "roomy family", "family hauler"
     ],
 
     "offroad": [
@@ -129,8 +147,10 @@ INTENTS = {
         "offroading",
         "rugged",
         "rough roads",
+        "rough road",
         "bad roads",
-        "4x4"
+        "4x4",
+        "adventure", "trail driving", "unpaved roads", "camping trips", "ground clearance"
     ],
 
     "efficiency": [
@@ -139,21 +159,34 @@ INTENTS = {
         "good mileage",
         "high mileage",
         "fuel economy",
-        "economical"
+        "economical",
+        "low running costs", "save on fuel", "saving fuel", "commuter car", "cheap to run"
     ],
 
     "luxury": [
         "luxury",
         "luxurious",
-        "premium"
+        "premium",
+        "executive", "high-end", "premium cabin", "luxurious interior", "comfort cruiser"
     ],
 
     "city": [
         "city",
         "city driving",
-        "urban"
+        "urban",
+        "easy to park", "easy parking", "daily commute", "stop-and-go", "city commute"
+    ],
+
+    "safety": [
+        "safe car", "safest", "safety-focused", "peace of mind", "protect my family"
     ]
 }
+
+
+SPORTS_CAR_TERMS = (
+    "sports car", "sports cars", "sportscar", "sportscars", "supercar",
+    "supercars", "roadster", "track car", "grand tourer", "gran turismo",
+)
 
 
 # ---------------------------------------------------------
@@ -162,9 +195,13 @@ INTENTS = {
 
 def contains_any(text, terms):
     """
-    Returns True if any term occurs in the text.
+    Returns True for a whole phrase or token, avoiding matches inside
+    unrelated words.
     """
-    return any(term in text for term in terms)
+    return any(
+        re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", text)
+        for term in terms
+    )
 
 
 # ---------------------------------------------------------
@@ -183,6 +220,17 @@ def extract_budget(query):
     2000000
     """
 
+    # Combined amount, such as "1 crore 50 lakh".
+    combined_match = re.search(
+        r'(\d+(?:\.\d+)?)\s*(?:crore|crores|cr)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*(?:lakh|lakhs|lac|l)\b',
+        query,
+    )
+    if combined_match:
+        if combined_match.start(1) > 0 and query[combined_match.start(1) - 1] in "-−":
+            return None
+        crore_value, lakh_value = map(float, combined_match.groups())
+        return int(crore_value * 10000000 + lakh_value * 100000)
+
     # Indian lakh format
     lakh_match = re.search(
         r'(\d+(?:\.\d+)?)\s*(?:lakh|lakhs|lac|l)\b',
@@ -190,6 +238,8 @@ def extract_budget(query):
     )
 
     if lakh_match:
+        if lakh_match.start(1) > 0 and query[lakh_match.start(1) - 1] in "-−":
+            return None
         value = float(lakh_match.group(1))
         return int(value * 100000)
 
@@ -200,6 +250,8 @@ def extract_budget(query):
     )
 
     if crore_match:
+        if crore_match.start(1) > 0 and query[crore_match.start(1) - 1] in "-−":
+            return None
         value = float(crore_match.group(1))
         return int(value * 10000000)
 
@@ -210,9 +262,32 @@ def extract_budget(query):
     )
 
     if rupee_match:
+        if rupee_match.start() > 0 and query[rupee_match.start() - 1] in "-−":
+            return None
         value = rupee_match.group(1).replace(",", "")
         return int(value)
 
+    # Accept plain rupee amounts only with a clear budget phrase and a
+    # plausible car-price magnitude.
+    plain_amount = re.search(
+        r'\b(?:under|below|within|up\s+to|upto|less\s+than|budget(?:\s+of)?|maximum|max\.?)\s+(\d[\d,]*)\b',
+        query,
+    )
+    if plain_amount:
+        if plain_amount.start(1) > 0 and query[plain_amount.start(1) - 1] in "-−":
+            return None
+        value = int(plain_amount.group(1).replace(",", ""))
+        return value if value >= 10000 else None
+
+    return None
+
+
+def extract_numeric_constraint(query, patterns):
+    for pattern in patterns:
+        match = re.search(pattern, query)
+        if match:
+            value = match.group(1).replace(",", "")
+            return float(value) if "." in value else int(value)
     return None
 
 
@@ -308,6 +383,12 @@ def extract_intents(query):
             intents.append(intent)
 
     return intents
+
+
+def extract_vehicle_category(query):
+    if contains_any(query, SPORTS_CAR_TERMS):
+        return "sports_car"
+    return None
 
 
 # ---------------------------------------------------------
@@ -469,45 +550,79 @@ def find_reference_model(query, cars):
     from being interpreted as a vehicle reference.
     """
 
-    if not cars:
-        return None
+    matches = find_reference_models(query, cars)
+    return matches[0]["model"] if matches else None
 
-    query = query.lower()
 
-    models = set()
-
-    for car in cars:
-        model = car.get("model")
-
-        if model:
-            models.add(model)
-
-    # Longest models first
+def find_reference_models(query, cars):
+    """Find all catalog model mentions in order, preferring the longest name."""
+    if not cars or not isinstance(query, str):
+        return []
+    canonical_models = {
+        car["model"].strip().lower(): car["model"]
+        for car in cars if car.get("model")
+    }
     models = sorted(
-        models,
+        {car.get("model") for car in cars if car.get("model")},
         key=len,
-        reverse=True
+        reverse=True,
     )
+    if not models:
+        return []
+    pattern = re.compile(
+        r"(?<![a-z0-9])(?:" + "|".join(re.escape(model) for model in models)
+        + r")(?![a-z0-9])",
+        re.IGNORECASE,
+    )
+    return [
+        {
+            "model": canonical_models[match.group(0).strip().lower()],
+            "start": match.start(),
+            "end": match.end(),
+        }
+        for match in pattern.finditer(query)
+    ]
 
-    for model in models:
 
-        model_lower = model.lower().strip()
-
-        # Escape model name so regex treats it literally
-        pattern = r'\b' + re.escape(model_lower) + r'\b'
-
-        if re.search(pattern, query):
-            return model
-
-    return None
+def extract_price_reference_comparisons(query, cars):
+    """Associate nearby cheaper/costlier wording with each mentioned model."""
+    refs = find_reference_models(query, cars)
+    if not refs:
+        return []
+    lower_terms = (
+        "less expensive than", "lower priced than", "lower price than",
+        "cheaper than", "cheaper alternative", "budget alternative",
+    )
+    higher_terms = (
+        "more expensive than", "higher priced than", "higher price than",
+        "costlier than", "premium alternative",
+    )
+    comparisons = []
+    for index, ref in enumerate(refs):
+        segment_start = refs[index - 1]["end"] if index else 0
+        segment = query[segment_start:ref["start"]].lower()
+        operators = [
+            (segment.rfind(term), "less_than")
+            for term in lower_terms if term in segment
+        ] + [
+            (segment.rfind(term), "greater_than")
+            for term in higher_terms if term in segment
+        ]
+        if operators:
+            _, operator = max(operators, key=lambda pair: pair[0])
+            comparisons.append({
+                "type": "price",
+                "operator": operator,
+                "reference_model": ref["model"],
+            })
+    return comparisons
 
 # ---------------------------------------------------------
 # MAIN PARSER
 # ---------------------------------------------------------
 
 def parse_query(query, cars=None):
-
-    query = query.lower().strip()
+    query = query.lower().strip() if isinstance(query, str) else ""
 
     features = extract_features(query)
 
@@ -515,6 +630,8 @@ def parse_query(query, cars=None):
         query,
         cars
     )
+
+    price_comparisons = extract_price_reference_comparisons(query, cars)
 
     comparison = extract_comparison(query)
 
@@ -538,8 +655,13 @@ def parse_query(query, cars=None):
         "comparison":
             comparison,
 
+        "price_comparisons": price_comparisons,
+
         "intent":
             extract_intents(query),
+
+        "vehicle_category":
+            extract_vehicle_category(query),
 
         "transmission":
             extract_transmission(query),
@@ -550,14 +672,11 @@ def parse_query(query, cars=None):
         "drive_type":
             extract_drive_type(query),
 
-        "min_bhp":
-            None,
+        "min_bhp": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d[\d,]*)\s*(?:bhp|hp)\b"]),
 
-        "min_ncap":
-            None,
+        "min_ncap": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d)\s*[- ]?star(?:\s*ncap)?"]),
 
-        "min_airbags":
-            None,
+        "min_airbags": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+)\s*airbags?"]),
 
         "adas_required":
             features["adas_required"],
@@ -578,17 +697,13 @@ def parse_query(query, cars=None):
         "ev_required":
             features["ev_required"],
 
-        "min_range":
-            None,
+        "min_range": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d[\d,]*)\s*km\s*(?:range)?", r"range\s*(?:of|above|over)?\s*(\d[\d,]*)\s*km"]),
 
-        "min_mileage":
-            None,
+        "min_mileage": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+(?:\.\d+)?)\s*(?:km/?l|kmpl|mileage)"]),
 
-        "min_boot_space":
-            None,
+        "min_boot_space": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+)\s*(?:litres?|liters?|l)\s*(?:boot|boot space)?"]),
 
-        "min_ground_clearance":
-            None
+        "min_ground_clearance": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+)\s*mm\s*(?:ground clearance)?"])
     }
 
     return parsed

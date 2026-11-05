@@ -45,6 +45,9 @@ with open(INPUT_FILE, "r", encoding="utf-8") as file:
                 "bhp": parse_number(row["Engine Bhp"]),
                 "torque": parse_number(row["Engine Torque"]),
                 "transmission": row["Engine Transmission"],
+                "fuel_type": row["Efficiency Fuel Type"],
+                "drive": row["Engine Drive"],
+                "turbo": parse_bool(row["Engine Turbo"]),
                 "gears": parse_number(row["Engine Gears"]),
                 "zero_to_hundred": parse_number(row["Engine 0 100 Sec"]),
                 "top_speed": parse_number(row["Engine Top Speed"])

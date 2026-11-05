@@ -1,9 +1,11 @@
 import json
+from pathlib import Path
 import joblib
 
 
-DATA_FILE = "/Users/shail/Desktop/Car Projecr/data/processed/enhanced_vehicles.json"
-MODEL_FILE ="/Users/shail/Desktop/Car Projecr/data/processed/ranker.pkl"
+ROOT = Path(__file__).resolve().parents[2]
+DATA_FILE = ROOT / "data/processed/enhanced_vehicles.json"
+MODEL_FILE = ROOT / "data/processed/ranker.pkl"
 
 
 with open(DATA_FILE, "r", encoding="utf-8") as file:
