@@ -50,6 +50,24 @@ python scripts/postgres_uploader.py
 
 The loader preserves catalog order so its rows remain aligned with the checked-in FAISS index. If PostgreSQL is unset or unavailable, the app reads the bundled JSON catalog.
 
+## Run with Docker
+
+Build the image from the repository root:
+
+```bash
+docker build -t carsense .
+```
+
+Start the container:
+
+```bash
+docker run --rm -p 5000:5000 carsense
+```
+
+Open `http://localhost:5000`. The same container serves the React client and Flask API; `/health` is the health-check endpoint. The image build downloads the Sentence Transformer model so semantic retrieval is available when the container starts. This requires network access during the first build and makes the image larger.
+
+Optional integrations can be configured at runtime with `OPENAI_API_KEY`, `OPENAI_MODEL`, or `DATABASE_URL`. Without them, the deterministic parser and bundled JSON catalog are used.
+
 ## Tests
 
 Run the parser, filter, ranking, catalog integrity, LLM fallback, and API edge-case suite with:
