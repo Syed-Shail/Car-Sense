@@ -1,0 +1,50 @@
+{
+  "url": "http://127.0.0.1:5055",
+  "seconds_per_level": 20.0,
+  "levels": [
+    {
+      "concurrency": 1,
+      "requests": 884,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 44.2,
+      "requests_per_day_at_this_rate": 3818297,
+      "p50_ms": 22.7,
+      "p95_ms": 26.8,
+      "p99_ms": 34.3
+    },
+    {
+      "concurrency": 4,
+      "requests": 976,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 48.7,
+      "requests_per_day_at_this_rate": 4206468,
+      "p50_ms": 79.2,
+      "p95_ms": 115.1,
+      "p99_ms": 132.3
+    },
+    {
+      "concurrency": 8,
+      "requests": 976,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 48.5,
+      "requests_per_day_at_this_rate": 4190812,
+      "p50_ms": 163.5,
+      "p95_ms": 201.6,
+      "p99_ms": 222.5
+    },
+    {
+      "concurrency": 16,
+      "requests": 979,
+      "errors": 0,
+      "error_rate": 0.0,
+      "throughput_rps": 48.2,
+      "requests_per_day_at_this_rate": 4164862,
+      "p50_ms": 329.2,
+      "p95_ms": 379.8,
+      "p99_ms": 401.1
+    }
+  ]
+}
