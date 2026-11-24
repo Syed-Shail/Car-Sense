@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies (CPU-only PyTorch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Query understanding and recommendation evaluation
+        run: python -m evaluation.run_eval
+      - name: Quality gate on the held-out queries
+        run: |
+          python - <<'PY'
+          import json, sys
+          held_out = json.load(open("evaluation/results.json"))["held_out"]
+          checks = {
+              "constraint F1": (held_out["query_understanding"]["constraint_f1"], 0.95),
+              "cars meeting every stated constraint": (held_out["recommendations"]["cars_meeting_every_stated_constraint"], 0.98),
+          }
+          failed = False
+          for name, (value, minimum) in checks.items():
+              print(f"{name}: {value:.3f} (minimum {minimum})")
+              failed |= value < minimum
+          sys.exit(1 if failed else 0)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results
+          path: evaluation/results.json
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: carsense:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

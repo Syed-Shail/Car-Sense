@@ -1,0 +1,5 @@
+region          = "me-central-1"
+min_tasks       = 1
+max_tasks       = 4
+enable_postgres = false
+# openai_api_key = "sk-..."   # optional; better passed as TF_VAR_openai_api_key
