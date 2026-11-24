@@ -282,6 +282,35 @@ def extract_budget(query):
     return None
 
 
+_UNIT = {"lakh": 100000, "lakhs": 100000, "lac": 100000, "l": 100000,
+         "crore": 10000000, "crores": 10000000, "cr": 10000000}
+_AMOUNT = r"(?:₹\s*)?(\d+(?:\.\d+)?)\s*(lakhs?|lac|l|crores?|cr)?"          # unit optional
+_AMOUNT_WITH_UNIT = r"(?:₹\s*)?(\d+(?:\.\d+)?)\s*(lakhs?|lac|l|crores?|cr)"  # unit required
+_PRICE_RANGE = re.compile(r"\b(?:between|from)?\s*" + _AMOUNT + r"\s*(?:and|to|-|–)\s*" + _AMOUNT_WITH_UNIT + r"\b")
+_PRICE_MINIMUM = re.compile(
+    r"\b(?:above|over|more\s+than|starting\s+(?:from|at)|at\s+least|minimum(?:\s+of)?)\s+"
+    + _AMOUNT_WITH_UNIT + r"\b"
+)
+
+
+def extract_price_bounds(query):
+    """Return (min_price, max_price, span) for "between 20 and 30 lakh" or "above 50 lakh", else None.
+
+    A range sets both bounds; a lone lower bound ("above 50 lakh") is a minimum, not a budget.
+    """
+    match = _PRICE_RANGE.search(query)
+    if match and (match.group(2) or match.group(4)):
+        low_unit = _UNIT[match.group(2) or match.group(4)]
+        low = float(match.group(1)) * low_unit
+        high = float(match.group(3)) * _UNIT[match.group(4)]
+        if 0 < low < high:
+            return int(low), int(high), match.span()
+    match = _PRICE_MINIMUM.search(query)
+    if match:
+        return int(float(match.group(1)) * _UNIT[match.group(2)]), None, match.span()
+    return None
+
+
 def extract_numeric_constraint(query, patterns):
     for pattern in patterns:
         match = re.search(pattern, query)
@@ -295,20 +324,28 @@ def extract_numeric_constraint(query, patterns):
 # SEATS
 # ---------------------------------------------------------
 
+NUMBER_WORDS = {
+    "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9,
+}
+_COUNT = r"(\d+|" + "|".join(NUMBER_WORDS) + r")"
+
+
 def extract_seats(query):
+    """Handles "7 seats", "7-seater", "seven seater", "seats 8", "for 5 people", "family of six"."""
     patterns = [
-        r'(\d+)\s*(?:seater|seaters|seats)',
-        r'for\s+(\d+)\s*(?:people|passengers)',
-        r'(\d+)\s*people',
-        r'(\d+)\s*passengers'
+        _COUNT + r"[\s-]*(?:seaters?|seats?)\b",
+        r"\bseats?\s+" + _COUNT + r"\b",
+        r"\bfor\s+" + _COUNT + r"\s*(?:people|passengers|persons)\b",
+        r"\bfamily\s+of\s+" + _COUNT + r"\b",
+        r"\b" + _COUNT + r"\s*(?:people|passengers|persons)\b",
     ]
 
     for pattern in patterns:
-
         match = re.search(pattern, query)
-
         if match:
-            return int(match.group(1))
+            value = match.group(1)
+            return NUMBER_WORDS.get(value) or int(value)
 
     return None
 
@@ -538,7 +575,7 @@ def extract_comparison(query):
 # REFERENCE MODEL
 # ---------------------------------------------------------
 
-def find_reference_model(query, cars):
+def find_reference_model(query, cars, original=None):
     """
     Finds a vehicle model explicitly mentioned in the query.
 
@@ -550,14 +587,49 @@ def find_reference_model(query, cars):
     from being interpreted as a vehicle reference.
     """
 
-    matches = find_reference_models(query, cars)
+    matches = find_reference_models(query, cars, original=original)
     return matches[0]["model"] if matches else None
 
 
-def find_reference_models(query, cars):
-    """Find all catalog model mentions in order, preferring the longest name."""
+# Model names that are also everyday words ("city driving", "a sport car", "the venue").
+AMBIGUOUS_MODEL_NAMES = {
+    "city", "sport", "seal", "venue", "compass", "swift", "punch", "discovery", "defender",
+    "cooper", "superb", "elevate", "aura", "carnival", "safari", "basalt", "amaze", "meridian",
+}
+_STRONG_CUES = re.compile(
+    r"(?:than|like|vs\.?|versus|similar\s+to|compared\s+(?:to|with)|alternative\s+to|instead\s+of|rival\s+to)"
+    r"\s*(?:the\s+|a\s+|an\s+)?$"
+)
+
+
+def _is_explicit_reference(model, start, end, query, original, brands):
+    """Decide whether an everyday-word model name really refers to the car."""
+    before = query[max(0, start - 40):start].rstrip()
+    after = query[end:end + 25]
+    if any(before.endswith(brand) for brand in brands):
+        return True  # "Honda City", "Tata Safari"
+    if _STRONG_CUES.search(before + " "):
+        return True  # "cheaper than Swift", "like the Venue"
+    if re.match(r"\s*(?:alternative|rival|or similar|vs\.?|versus|owner)", after):
+        return True  # "City alternative"
+    if original and len(original) == len(query) and start > 0:
+        # A capitalised name mid-sentence ("I drive a Venue") is a deliberate proper noun.
+        return original[start].isupper()
+    return False
+
+
+def find_reference_models(query, cars, original=None):
+    """Find all catalog model mentions in order, preferring the longest name.
+
+    Models whose names are everyday words only count when the context makes the reference
+    explicit (brand name, comparison wording, or a capitalised proper noun).
+    """
     if not cars or not isinstance(query, str):
         return []
+    brands_by_model = {}
+    for car in cars:
+        if car.get("model") and car.get("brand"):
+            brands_by_model.setdefault(car["model"].strip().lower(), set()).add(car["brand"].strip().lower())
     canonical_models = {
         car["model"].strip().lower(): car["model"]
         for car in cars if car.get("model")
@@ -574,14 +646,15 @@ def find_reference_models(query, cars):
         + r")(?![a-z0-9])",
         re.IGNORECASE,
     )
-    return [
-        {
-            "model": canonical_models[match.group(0).strip().lower()],
-            "start": match.start(),
-            "end": match.end(),
-        }
-        for match in pattern.finditer(query)
-    ]
+    found = []
+    for match in pattern.finditer(query):
+        name = match.group(0).strip().lower()
+        if name in AMBIGUOUS_MODEL_NAMES and not _is_explicit_reference(
+            name, match.start(), match.end(), query.lower(), original, brands_by_model.get(name, set())
+        ):
+            continue
+        found.append({"model": canonical_models[name], "start": match.start(), "end": match.end()})
+    return found
 
 
 def extract_price_reference_comparisons(query, cars):
@@ -622,13 +695,22 @@ def extract_price_reference_comparisons(query, cars):
 # ---------------------------------------------------------
 
 def parse_query(query, cars=None):
-    query = query.lower().strip() if isinstance(query, str) else ""
+    original = query.strip() if isinstance(query, str) else ""
+    query = original.lower()
+    bounds = extract_price_bounds(query)
+    if bounds:
+        min_price, max_price, (start, end) = bounds
+        # Read any separate ceiling ("above 50 lakh but under 80 lakh") outside the matched phrase.
+        budget = max_price if max_price is not None else extract_budget(query[:start] + " " + query[end:])
+    else:
+        min_price, budget = None, extract_budget(query)
 
     features = extract_features(query)
 
     reference_model = find_reference_model(
         query,
-        cars
+        cars,
+        original=original,
     )
 
     price_comparisons = extract_price_reference_comparisons(query, cars)
@@ -638,7 +720,10 @@ def parse_query(query, cars=None):
     parsed = {
 
         "budget":
-            extract_budget(query),
+            budget,
+
+        "min_price":
+            min_price,
 
         "body_type":
             extract_body_type(query),
@@ -674,7 +759,11 @@ def parse_query(query, cars=None):
 
         "min_bhp": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d[\d,]*)\s*(?:bhp|hp)\b"]),
 
-        "min_ncap": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d)\s*[- ]?star(?:\s*ncap)?"]),
+        "min_ncap": extract_numeric_constraint(query, [
+            r"(?:at least|minimum|min\.?|over)\s*(\d)\s*[- ]?star(?:\s*ncap)?",
+            r"\b(\d)\s*[- ]?star\s*(?:safety|ncap|crash|rated|rating|bharat ncap|global ncap)",
+            r"\bncap\s*(?:rating\s*)?(?:of\s*)?(\d)\s*[- ]?stars?",
+        ]),
 
         "min_airbags": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+)\s*airbags?"]),
 
@@ -697,7 +786,7 @@ def parse_query(query, cars=None):
         "ev_required":
             features["ev_required"],
 
-        "min_range": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d[\d,]*)\s*km\s*(?:range)?", r"range\s*(?:of|above|over)?\s*(\d[\d,]*)\s*km"]),
+        "min_range": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d[\d,]*)\s*km\s*(?:range)?", r"range\s*(?:of|above|over)?\s*(\d[\d,]*)\s*km", r"(\d[\d,]*)\s*km\s*(?:of\s*)?range"]),
 
         "min_mileage": extract_numeric_constraint(query, [r"(?:at least|minimum|min\.?|over)\s*(\d+(?:\.\d+)?)\s*(?:km/?l|kmpl|mileage)"]),
 

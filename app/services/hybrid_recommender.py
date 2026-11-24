@@ -35,6 +35,11 @@ body_encoder = saved["body_encoder"]
 priority_encoder = saved["priority_encoder"]
 
 
+# Gearboxes a buyer asking for an "automatic" will accept. iMT (clutchless manual) is excluded.
+AUTOMATIC_TRANSMISSIONS = frozenset({
+    "automatic", "amt", "cvt", "ivt", "e-cvt", "dct", "dsg", "pdk", "at", "tc", "single speed",
+})
+
 def semantic_candidates(query, top_k=50):
     if not query or not query.strip():
         return cars
@@ -103,7 +108,8 @@ def _best_variant(car, constraints):
         actual_transmission = str(engine.get("transmission", "")).lower()
         if requested_transmission:
             if requested_transmission.lower() == "automatic":
-                if actual_transmission not in {"automatic", "amt", "cvt", "dct", "at", "imt"}:
+                # iMT is a clutchless manual gearbox, so it is not offered as an automatic.
+                if actual_transmission not in AUTOMATIC_TRANSMISSIONS:
                     continue
             elif requested_transmission.lower() == "manual":
                 if actual_transmission != "manual":
@@ -252,28 +258,29 @@ def ml_rerank(filtered_cars, budget, seats, priority, limit=5):
     seats = seats or 5
     priority = priority or "family"
 
-    for car in filtered_cars:
-        min_price = car.get("_matched_price") or min(
-            variant["pricing"]["ex_showroom"] for variant in car["variants"]
-        )
+    if not filtered_cars:
+        return []
 
-        features = pd.DataFrame([{
-            "budget": budget,
-            "seats": seats,
-            "body_type": body_encoder.transform([car["body_type"]])[0],
-            "priority": priority_encoder.transform([priority])[0],
-            "car_price": min_price,
-            "family_score": car["ai"]["family_score"],
-            "performance_score": car["ai"]["performance_score"],
-            "city_score": car["ai"]["city_score"],
-            "luxury_score": car["ai"]["luxury_score"],
-            "offroad_score": car["ai"]["offroad_score"],
-            "safety_score": car["ai"]["safety_score"],
-            "efficiency_score": car["ai"]["efficiency_score"]
-        }])
+    prices = [
+        car.get("_matched_price") or min(variant["pricing"]["ex_showroom"] for variant in car["variants"])
+        for car in filtered_cars
+    ]
+    # Score every candidate in one batched call; per-car calls made ranking ~10x slower.
+    features = pd.DataFrame({
+        "budget": budget,
+        "seats": seats,
+        "body_type": body_encoder.transform([car["body_type"] for car in filtered_cars]),
+        "priority": priority_encoder.transform([priority])[0],
+        "car_price": prices,
+        **{
+            name: [car["ai"][name] for car in filtered_cars]
+            for name in ("family_score", "performance_score", "city_score", "luxury_score",
+                         "offroad_score", "safety_score", "efficiency_score")
+        },
+    })
+    probabilities = ranker.predict_proba(features)[:, 1]
 
-        probability = ranker.predict_proba(features)[0][1]
-
+    for car, min_price, probability in zip(filtered_cars, prices, probabilities):
         ranked.append({
             "brand": car["brand"],
             "model": car["model"],

@@ -357,5 +357,48 @@ class ApiEdgeCaseTests(unittest.TestCase):
         self.assertEqual(payload["recommendations"], [])
 
 
+
+class QueryUnderstandingRegressionTests(unittest.TestCase):
+    def test_seat_counts_in_many_phrasings(self):
+        for query, seats in [
+            ("a 7-seater suv", 7), ("seven seater mpv", 7), ("a car that seats 8", 8),
+            ("an suv for a family of six", 6), ("two seater sports car", 2), ("with 7 seats", 7),
+        ]:
+            self.assertEqual(parse_query(query, reference_catalog)["seats"], seats, query)
+
+    def test_price_ranges_and_minimums(self):
+        between = parse_query("luxury SUV between 60 lakh and 1 crore", reference_catalog)
+        self.assertEqual((between["min_price"], between["budget"]), (6_000_000, 10_000_000))
+        shared_unit = parse_query("electric SUV between 20 and 30 lakh", reference_catalog)
+        self.assertEqual((shared_unit["min_price"], shared_unit["budget"]), (2_000_000, 3_000_000))
+        minimum = parse_query("luxury sedan above 50 lakh", reference_catalog)
+        self.assertEqual((minimum["min_price"], minimum["budget"]), (5_000_000, None))
+        self.assertIsNone(parse_query("over 300 bhp coupe", reference_catalog)["min_price"])
+
+    def test_everyday_words_are_not_mistaken_for_models(self):
+        for query in ("easy to park hatchback for city driving", "car for sport and daily commute",
+                      "a car for the venue of my wedding"):
+            self.assertIsNone(parse_query(query, reference_catalog)["reference_model"], query)
+        for query, model in [("Honda City alternative", "City"), ("cheaper than Swift", "Swift"),
+                             ("I like the Venue", "Venue")]:
+            self.assertEqual(parse_query(query, reference_catalog)["reference_model"], model, query)
+
+    def test_safety_rating_and_range_without_minimum_wording(self):
+        self.assertEqual(parse_query("suv with 5-star safety rating", reference_catalog)["min_ncap"], 5)
+        self.assertEqual(parse_query("ev with 500 km range", reference_catalog)["min_range"], 500)
+
+
+class TransmissionFilterTests(unittest.TestCase):
+    def _car(self, gearbox):
+        return car_fixture(variants=[{
+            "variant_name": gearbox, "pricing": {"ex_showroom": 1_000_000},
+            "engine": {"transmission": gearbox, "fuel_type": "Petrol"},
+        }])
+
+    def test_imt_is_not_offered_as_automatic_but_dct_pdk_and_ev_single_speed_are(self):
+        self.assertEqual(apply_filters([self._car("iMT")], transmission="Automatic"), [])
+        for gearbox in ("DCT", "PDK", "Single Speed", "CVT", "AMT"):
+            self.assertEqual(len(apply_filters([self._car(gearbox)], transmission="Automatic")), 1, gearbox)
+
 if __name__ == "__main__":
     unittest.main()

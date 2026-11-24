@@ -1,0 +1,94 @@
+{
+  "development": {
+    "queries": 58,
+    "query_understanding": {
+      "field_accuracy": 1.0,
+      "constraint_precision": 1.0,
+      "constraint_recall": 1.0,
+      "constraint_f1": 1.0,
+      "queries_fully_understood": 1.0,
+      "per_field_accuracy": {
+        "budget": 1.0,
+        "min_price": 1.0,
+        "seats": 1.0,
+        "body_type": 1.0,
+        "fuel_type": 1.0,
+        "transmission": 1.0,
+        "drive_type": 1.0,
+        "reference_model": 1.0,
+        "comparison": 1.0,
+        "min_range": 1.0,
+        "min_airbags": 1.0,
+        "min_ncap": 1.0,
+        "sunroof_required": 1.0,
+        "camera_360_required": 1.0,
+        "adas_required": 1.0,
+        "turbo_required": 1.0
+      }
+    },
+    "recommendations": {
+      "cars_returned": 242,
+      "cars_meeting_every_stated_constraint": 1.0,
+      "queries_with_all_results_valid": 0.931,
+      "queries_with_no_results": 4,
+      "violations_by_constraint": {},
+      "median_latency_ms": 23.2,
+      "p95_latency_ms": 44.8
+    },
+    "errors": []
+  },
+  "held_out": {
+    "queries": 30,
+    "query_understanding": {
+      "field_accuracy": 0.9958,
+      "constraint_precision": 1.0,
+      "constraint_recall": 0.9737,
+      "constraint_f1": 0.9867,
+      "queries_fully_understood": 0.9333,
+      "per_field_accuracy": {
+        "budget": 1.0,
+        "min_price": 1.0,
+        "seats": 1.0,
+        "body_type": 0.9667,
+        "fuel_type": 1.0,
+        "transmission": 1.0,
+        "drive_type": 1.0,
+        "reference_model": 1.0,
+        "comparison": 0.9667,
+        "min_range": 1.0,
+        "min_airbags": 1.0,
+        "min_ncap": 1.0,
+        "sunroof_required": 1.0,
+        "camera_360_required": 1.0,
+        "adas_required": 1.0,
+        "turbo_required": 1.0
+      }
+    },
+    "recommendations": {
+      "cars_returned": 121,
+      "cars_meeting_every_stated_constraint": 1.0,
+      "queries_with_all_results_valid": 0.9333,
+      "queries_with_no_results": 2,
+      "violations_by_constraint": {},
+      "median_latency_ms": 21.6,
+      "p95_latency_ms": 24.1
+    },
+    "errors": [
+      {
+        "query": "SUVs from 15 to 20 lakh with a panoramic sunroof",
+        "field": "body_type",
+        "expected": "SUV",
+        "got": null
+      },
+      {
+        "query": "something more fuel efficient than my Honda City",
+        "field": "comparison",
+        "expected": [
+          "efficiency",
+          "greater_than"
+        ],
+        "got": null
+      }
+    ]
+  }
+}
