@@ -2,6 +2,45 @@
 
 CarSense turns a natural-language car-shopping request into a ranked shortlist from a structured Indian-market vehicle catalog. The local pipeline combines query understanding, FAISS semantic candidate retrieval, attribute constraints, and a trained scikit-learn ranking model.
 
+## Results
+
+Measured on hand-labelled queries ([`evaluation/`](evaluation/)) and an HTTP load test ([`loadtest/`](loadtest/)), on an Apple M5 laptop.
+
+**Query understanding**: every structured field is compared with its label; fields the user didn't mention must stay empty.
+
+| Query set | Queries | Field accuracy | Constraint F1 | Queries fully understood |
+|---|---|---|---|---|
+| Development, before the parser fixes | 58 | 98.3% | 0.936 | 75.9% |
+| Development, after | 58 | 100% | 1.000 | 100% |
+| **Held-out** (written separately, never used for tuning) | 30 | **99.6%** | **0.987** | **93.3%** |
+
+**Recommendations**: every car in the primary shortlist is checked against the user's stated budget, minimum price, seats, body type, fuel and gearbox.
+
+| | Before | After |
+|---|---|---|
+| Returned cars meeting every stated constraint (development) | 83.6% | **100%** |
+| Returned cars meeting every stated constraint (held-out) | – | **100%** |
+| Median / p95 request latency | 95 ms / 1,287 ms | **23 ms / 45 ms** |
+
+**Throughput** (Gunicorn, 1 worker × 4 threads, the Docker image's settings; 3,815 requests replaying the labelled queries):
+
+| Concurrent users | Requests/s | p50 | p95 | Errors |
+|---|---|---|---|---|
+| 1 | 44.2 | 23 ms | 27 ms | 0 |
+| 4 | 48.7 | 79 ms | 115 ms | 0 |
+| 16 | 48.2 | 329 ms | 380 ms | 0 |
+
+About 48 requests/s on a single worker is roughly **4.2 million requests per day**. On AWS the service autoscales on CPU from 1 to 4 tasks (see [Deploy to AWS](#deploy-to-aws)).
+
+### What the evaluation found and fixed
+
+- **Seat counts** like "7-seater", "seven seater", "seats 8" and "family of six" were missed. The seat parser now handles hyphens, number words and these phrasings.
+- **Everyday words matched car names.** "City driving", "a sport car" and "the venue of my wedding" were read as the Honda City, the Sport and the Hyundai Venue. Models whose names are common words now need explicit context: the brand name ("Honda City"), comparison wording ("cheaper than Swift", "like the Venue") or a capitalised proper noun.
+- **Price ranges** ("between 60 lakh and 1 crore", "between 20 and 30 lakh") and **minimums** ("above 50 lakh") were turned into a single ceiling. They now set both bounds, or only a minimum.
+- **Safety ratings and EV range** without "at least" ("5-star safety rating", "500 km range") are now understood.
+- **Gearbox filtering.** iMT, a clutchless *manual*, was offered to people asking for an automatic, while PDK (dual-clutch) and single-speed EV gearboxes were wrongly excluded.
+- **Latency.** The Random Forest ranker was called once per candidate car (181 calls per request). Scoring all candidates in one batched call gives identical scores and cut ranking from 1,254 ms to 14 ms.
+
 ## How a recommendation is produced
 
 1. The React client sends a natural-language `query` to `POST /recommend`.
@@ -70,11 +109,26 @@ Optional integrations can be configured at runtime with `OPENAI_API_KEY`, `OPENA
 
 ## Tests
 
-Run the parser, filter, ranking, catalog integrity, LLM fallback, and API edge-case suite with:
+Run the parser, filter, ranking, catalog integrity, LLM fallback, regression and API edge-case suite (28 tests) with:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+## Evaluation and load testing
+
+```bash
+python -m evaluation.run_eval      # query understanding + recommendation constraints, both query sets
+python loadtest/load_test.py --url http://127.0.0.1:5000 --seconds 20
+```
+
+The evaluation writes `evaluation/results.json`, including every field-level error. The load test replays the 88 labelled queries at 1, 4, 8 and 16 concurrent users against a running server (start it with the Gunicorn command from the Dockerfile) and writes `loadtest/results.json`.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the unit tests and the evaluation on every push, fails if held-out constraint F1 drops below 0.95 or constraint satisfaction drops below 98%, and builds the production Docker image.
+
+## Deploy to AWS
+
+[`infra/aws/`](infra/aws/) contains Terraform for ECR, an ECS Fargate service behind an Application Load Balancer (`/health` checks, CPU autoscaling from 1 to 4 tasks, circuit-breaker rollback), CloudWatch logs, Secrets Manager for `OPENAI_API_KEY` and `DATABASE_URL`, and an optional encrypted RDS PostgreSQL catalog. [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds, pushes and rolls out a new image on demand using GitHub OIDC (no long-lived AWS keys). Step-by-step instructions are in [`infra/aws/README.md`](infra/aws/README.md).
 
 ## API
 
@@ -134,11 +188,16 @@ app/                 Flask API and query/retrieval/ranking services
 data/raw/            Source vehicle CSV
 data/processed/      Cleaned catalog, engineered features, FAISS index, ranker
 scripts/             Data preparation, feature engineering, artifact builders
+evaluation/          Labelled development and held-out queries, evaluation runner and results
+loadtest/            HTTP load test and results
+infra/aws/           Terraform for ECR, ECS Fargate, ALB, autoscaling, Secrets Manager and RDS
+.github/workflows/   CI (tests, evaluation quality gate, Docker build) and manual AWS deploy
+tests/               Unit and regression tests
 run.py               Local application entry point
 ```
 
-## Scope and current limitations
+## Limitations
 
-- This repository implements the Flask API, local catalog pipeline, FAISS retrieval, deterministic query parsing, optional OpenAI extraction, hard filters, and Random Forest reranking.
-- The repository includes a React client and an optional PostgreSQL catalog pipeline. It does not include Docker configuration, AWS infrastructure, or measured 10K-request/day capacity; deployment is outside this local project implementation.
-- The checked-in catalog and heuristic training labels limit recommendation quality. Verify vehicle details and prices with manufacturers or dealers before making a purchase decision.
+- Ranking labels are generated from the project's heuristic preference scores, not from user clicks or human relevance judgements, so the Random Forest score is a ranking signal, not a calibrated purchase probability.
+- Known held-out misses: plural body types ("SUVs") and "more fuel efficient" are not yet recognised. They are left unfixed so the held-out set stays untouched.
+- Prices and specifications come from the bundled dataset, not live quotes. Verify details with a dealer before buying.
